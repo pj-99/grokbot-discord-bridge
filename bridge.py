@@ -145,7 +145,12 @@ class Bridge(discord.Client):
         return isinstance(resolved, discord.Message) and resolved.author.id == bot_id
 
     async def _build_payload(self, message: discord.Message, bot_id: int) -> dict[str, Any]:
-        history = [m async for m in message.channel.history(limit=HISTORY_LIMIT, before=message)]
+        # 只帶白名單使用者和 bot 自己的發言，非白名單的人碰不到 Grok（防 prompt injection）
+        # ponytail: 先抓 8 則再過濾，實際可能少於 8 則；要固定則數再改成多抓
+        history = [
+            m async for m in message.channel.history(limit=HISTORY_LIMIT, before=message)
+            if m.author.id in self.cfg.users or m.author.id == bot_id
+        ]
         history.reverse()  # 舊到新
         return {
             "source": "discord",
@@ -157,7 +162,12 @@ class Bridge(discord.Client):
             "content": strip_mentions(message.content, bot_id),
             "attachments": [a.url for a in message.attachments],
             "recent_messages": [
-                {"author_name": m.author.display_name, "content": m.content, "created_at": m.created_at.isoformat()}
+                {
+                    "author_id": str(m.author.id),
+                    "author_name": m.author.display_name,
+                    "content": m.content,
+                    "created_at": m.created_at.isoformat(),
+                }
                 for m in history
             ],
             "reply_hint": (
@@ -190,8 +200,6 @@ class Bridge(discord.Client):
             log.warning("無法加 reaction %s message=%s", emoji, message.id)
 
     async def _unreact(self, message: discord.Message, emoji: str) -> None:
-        if self.user is None:
-            return
         try:
             await message.remove_reaction(emoji, self.user)
         except discord.HTTPException:

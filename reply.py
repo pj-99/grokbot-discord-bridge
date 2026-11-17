@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 API = "https://discord.com/api/v10"
@@ -50,7 +51,9 @@ def _ids(raw: str | None) -> set[str] | None:
 
 
 def channel_permitted(channel: str, env_raw: str | None, flag_raw: str | None) -> bool:
-    """環境變數與 --allowed-channels 有設的都要通過（兩者取交集，旗標無法放寬環境變數）。"""
+    """環境變數與 --allowed-channels 有設的都要通過（兩者取交集，旗標無法放寬環境變數）；都沒設就拒絕。"""
+    if _ids(env_raw) is None and _ids(flag_raw) is None:
+        return False
     return all(allowed is None or channel in allowed for allowed in (_ids(env_raw), _ids(flag_raw)))
 
 
@@ -100,11 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     if not token:
         print("缺少環境變數 DISCORD_TOKEN", file=sys.stderr)
         return 2
-    if a.text is not None:
-        text = a.text
-    else:
-        with open(a.text_file, encoding="utf-8") as f:
-            text = f.read()
+    text = a.text if a.text is not None else Path(a.text_file).read_text(encoding="utf-8")
     chunks = split_text(text.strip())
     if not chunks:
         print("文字是空的", file=sys.stderr)
